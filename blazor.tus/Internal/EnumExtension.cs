@@ -1,7 +1,8 @@
 using System;
 using System.ComponentModel;
+using BirdMessenger;
 
-namespace BirdMessenger.Internal;
+namespace blazor.tus.Internal;
 
 internal static class EnumExtension
 {

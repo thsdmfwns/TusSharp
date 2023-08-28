@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace BirdMessenger.Constants;
+namespace blazor.tus.Constants;
 
 internal static class TusHeaders
 {
