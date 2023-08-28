@@ -95,7 +95,48 @@ public class TusUpload : IDisposable
         };
     }
     
-    
+    private async Task<TusHeadResponse> TusHeadAsync(TusCreateResponse tusCreateResponse)
+    {
+        if (tusCreateResponse.FileLocation is null)
+        {
+            throw new ArgumentNullException(nameof(tusCreateResponse.FileLocation));
+        }
+        var httpReqMsg = new HttpRequestMessage(HttpMethod.Head, tusCreateResponse.FileLocation);
+        httpReqMsg.Headers.Add(TusHeaders.TusResumable, tusCreateResponse.TusResumableVersion);
+        AddCustomHeaders(httpReqMsg);
+        var response = await _httpClient.SendAsync(httpReqMsg, CancellationToken);
+        response.EnsureSuccessStatusCode();
+        
+        if (!response.TryGetValueOfHeader(TusHeaders.TusResumable, out var tusVersion)
+            || tusVersion is null)
+        {
+            throw new IOException("Invalid TusResumable header");
+        }
+        
+        if (!response.TryGetValueOfHeader(TusHeaders.UploadOffset, out var uploadOffsetString)
+            || uploadOffsetString is null)
+        {
+            throw new IOException("Invalid UploadOffset header");
+        }
+        var uploadOffset = long.Parse(uploadOffsetString);
+        
+        if (!response.TryGetValueOfHeader(TusHeaders.UploadOffset, out var uploadLengthString)
+            || uploadLengthString is null
+            || !long.TryParse(uploadLengthString, out var uploadLength))
+        {
+            uploadLength = -1;
+        }
+
+        return new TusHeadResponse
+        {
+            OriginHttpRequestMessage = httpReqMsg,
+            OriginResponseMessage = response,
+            TusResumableVersion = tusVersion,
+            UploadOffset = uploadOffset,
+            UploadLength = uploadLength
+        };
+    }
+
      
     private void AddCustomHeaders(HttpRequestMessage httpRequestMessage)
     {
