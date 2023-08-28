@@ -1,12 +1,16 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using BirdMessenger;
+using blazor.tus.Constants;
+using blazor.tus.Infrastructure;
+using blazor.tus.Internal;
 using blazor.tus.Request;
 using blazor.tus.Response;
 
@@ -14,56 +18,108 @@ namespace blazor.tus;
 
 public class TusUpload : IDisposable
 {
-    public TusUpload(
-        Stream fileStream, 
-        Uri endPoint,
-        
-        List<int>? retryDelays = null,
-        Action<(long uploadedSize, long totalSize)>? onProgress = null,
-        Action<(HttpResponseMessage originalResponseMessage, HttpRequestMessage originalRequestMessage)>? onFailed = null,
-        Action? onCompleted = null,
-        Func<((HttpResponseMessage originalResponseMessage, HttpRequestMessage originalRequestMessage) err, int retryAttempt), bool>? onShouldRetry = null)
+    public TusUpload(Stream fileStream, TusUploadOption uploadOption, CancellationToken? cancellationToken = null)
     {
         FileStream = fileStream;
-        EndPoint = endPoint;
-        RetryDelays = retryDelays ?? new List<int> { 0, 1000, 3000, 5000 }; 
-        OnProgress = onProgress;
-        OnFailed = onFailed;
-        OnCompleted = onCompleted;
-        OnShouldRetry = onShouldRetry;
+        UploadOption = uploadOption;
+        CancellationToken = cancellationToken ?? default;
     }
-    
-    public Stream FileStream { get; set; }
 
-    public Uri EndPoint { get; set; }
-
-    public List<int> RetryDelays { get; set; }
-    
-    
-
-    public Action<(long uploadedSize, long totalSize)>? OnProgress { get; set; }
-    
-    /// <summary>
-    /// invoke when appear a Exception
-    /// </summary>
-    public Action<(HttpResponseMessage originalResponseMessage, HttpRequestMessage originalRequestMessage)>? OnFailed { get; set; }
-    
-    /// <summary>
-    /// invoke when complete uploading
-    /// </summary>
-    public Action? OnCompleted{ get; set; }
-
-    /// <summary>
-    /// invoke once an error appears and before retrying.
-    /// </summary>
-    public Func<(
-        (HttpResponseMessage originalResponseMessage, HttpRequestMessage originalRequestMessage) err, int retryAttempt), 
-        bool>? OnShouldRetry { get; set; }
-
+    public readonly Stream FileStream;
+    public readonly TusUploadOption UploadOption;
+    public readonly CancellationToken CancellationToken;
     private bool _disposedValue;
     private HttpClient _httpClient = new HttpClient();
 
+    private async Task<TusCreateResponse> TusCreateAsync()
+    {
+        var uploadLength = FileStream.Length;
+        var endpoint = UploadOption.EndPoint;
+        if (UploadOption.IsUploadDeferLength && uploadLength > 0)
+        {
+            throw new ArgumentException($"IsUploadDeferLength:[{UploadOption.IsUploadDeferLength}] can not set true if UploadLength:[{uploadLength}] is greater than zero");
+        }
+        if (!UploadOption.IsUploadDeferLength && uploadLength <= 0)
+        {
+            throw new ArgumentException($"IsUploadDeferLength:[{UploadOption.IsUploadDeferLength}] can not set false if UploadLength:[{uploadLength}] is less than zero");
+        }
+        
+        var httpReqMsg = new HttpRequestMessage(HttpMethod.Post, UploadOption.EndPoint);
+        httpReqMsg.Headers.Add(TusHeaders.TusResumable, UploadOption.TusVersion.GetEnumDescription());
+        if (uploadLength > 0)
+        {
+            httpReqMsg.Headers.Add(TusHeaders.UploadLength, uploadLength.ToString());
+        }
+        else if(UploadOption.IsUploadDeferLength)
+        {
+            httpReqMsg.Headers.Add(TusHeaders.UploadDeferLength,"1");
+        }
+        
+        var uploadMetadata = UploadOption.SerializedMetaData;
+        if (!string.IsNullOrWhiteSpace(uploadMetadata))
+        {
+            httpReqMsg.Headers.Add(TusHeaders.UploadMetadata, uploadMetadata);
+        }
+        AddCustomHeaders(httpReqMsg);
+
+        var response = await _httpClient.SendAsync(httpReqMsg, CancellationToken);
+        if (response.StatusCode != HttpStatusCode.Created)
+        {
+            UploadOption.OnFailed?.Invoke((response, httpReqMsg));
+        }
+
+        Uri? fileUrl;
+        if (!response.TryGetValueOfHeader(TusHeaders.Location, out var fileUrlStr)
+            || fileUrlStr is null
+            || !Uri.TryCreate(fileUrlStr, UriKind.RelativeOrAbsolute, out fileUrl))
+        {
+            throw new IOException("Invalid location header");
+        }
+        if (!fileUrlStr.StartsWith("https://") && !fileUrlStr.StartsWith("http://"))
+        {
+            fileUrl = new Uri(endpoint, fileUrl);
+        }
+
+        if (!response.TryGetValueOfHeader(TusHeaders.TusResumable, out var tusVersion)
+            || tusVersion is null)
+        {
+            throw new IOException("Invalid TusResumable header");
+        }
+
+        return new TusCreateResponse()
+        {
+            FileLocation = fileUrl,
+            OriginHttpRequestMessage = httpReqMsg,
+            OriginResponseMessage = response,
+            TusResumableVersion = tusVersion
+        };
+    }
+    
+    
      
+    private void AddCustomHeaders(HttpRequestMessage httpRequestMessage)
+    {
+        ValidateHttpHeaders();
+        if (!UploadOption.CustomHttpHeaders.Any()) return;
+        foreach (var key in UploadOption.CustomHttpHeaders.Keys)
+        {
+            httpRequestMessage.Headers.Add(key, UploadOption.CustomHttpHeaders[key]);
+        }
+    }
+
+    private void ValidateHttpHeaders()
+    {
+        if (!UploadOption.CustomHttpHeaders.Any()) return;
+        var reveredWords =
+            UploadOption.CustomHttpHeaders.Keys.Where(headerKey => TusHeaders.TusReservedWords.Contains(headerKey.ToLower()))
+                .ToList();
+        if (reveredWords.Any())
+        {
+            throw new ArgumentException(
+                $"HttpHeader can not contain tus Reserved word : {JsonSerializer.Serialize(reveredWords)}");
+        }
+    }
+    
      public void Dispose()
      {
          GC.SuppressFinalize(this);
@@ -83,17 +139,6 @@ public class TusUpload : IDisposable
          }
      }
      
-     private string SerializeMetaData(Dictionary<string, string> metadata)
-     {
-         string[] meta = new string[metadata.Count];
-         int index = 0;
-         foreach (var item in metadata)
-         {
-             string key = item.Key;
-             string value = Convert.ToBase64String(Encoding.UTF8.GetBytes(item.Value));
-             meta[index++] = $"{key} {value}";
-         }
-         return string.Join(",", meta);
-     }
+     
 
 }
