@@ -1,25 +1,15 @@
-﻿namespace blazor.tus;
+﻿using System;
+using System.Net.Http;
+using System.Threading.Tasks;
 
-public class TusClient : IDisposable
+namespace blazor.tus;
+
+public class TusClient
 {
-    private bool _disposedValue;
-
-    
-    
-    public void Dispose()
+    public async Task Upload()
     {
-        GC.SuppressFinalize(this);
+        //todo add upload 
     }
     
-    protected virtual void Dispose(bool disposing)
-    {
-        if (!_disposedValue)
-        {
-            if (disposing)
-            {
-                //Todo dispose handles
-            }
-            _disposedValue = true;
-        }
-    }
+    
 }
