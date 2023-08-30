@@ -1,17 +1,10 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
+using System.Buffers;
+using System.IO.Pipelines;
 using System.Net;
-using System.Net.Http;
-using System.Text;
 using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
 using blazor.tus.Constants;
 using blazor.tus.Infrastructure;
 using blazor.tus.Internal;
-using blazor.tus.Request;
 using blazor.tus.Response;
 
 namespace blazor.tus;
@@ -65,7 +58,7 @@ public class TusUpload : IDisposable
         var response = await _httpClient.SendAsync(httpReqMsg, CancellationToken);
         if (response.StatusCode != HttpStatusCode.Created)
         {
-            UploadOption.OnFailed?.Invoke((response, httpReqMsg));
+            throw new IOException($"Tus upload Create method failed with http status code : {response.StatusCode} \n");
         }
 
         Uri? fileUrl;
@@ -95,17 +88,16 @@ public class TusUpload : IDisposable
         };
     }
     
-    private async Task<TusHeadResponse> TusHeadAsync(TusCreateResponse tusCreateResponse)
+    private async Task<TusHeadResponse> TusHeadAsync(string fileLocation, string tusResumableVersion)
     {
-        if (tusCreateResponse.FileLocation is null)
-        {
-            throw new ArgumentNullException(nameof(tusCreateResponse.FileLocation));
-        }
-        var httpReqMsg = new HttpRequestMessage(HttpMethod.Head, tusCreateResponse.FileLocation);
-        httpReqMsg.Headers.Add(TusHeaders.TusResumable, tusCreateResponse.TusResumableVersion);
+        var httpReqMsg = new HttpRequestMessage(HttpMethod.Head, fileLocation);
+        httpReqMsg.Headers.Add(TusHeaders.TusResumable, tusResumableVersion);
         AddCustomHeaders(httpReqMsg);
         var response = await _httpClient.SendAsync(httpReqMsg, CancellationToken);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new IOException($"Tus upload HEAD method failed with http status code : {response.StatusCode} \n");
+        }
         
         if (!response.TryGetValueOfHeader(TusHeaders.TusResumable, out var tusVersion)
             || tusVersion is null)
@@ -137,7 +129,132 @@ public class TusUpload : IDisposable
         };
     }
 
-     
+    private async Task TusPatchAsync(string fileLocation, long uploadOffset)
+    {
+        var pipereader = PipeReader.Create(FileStream);
+        var totalSize = FileStream.Length;
+        long uploadedSize;
+        HttpRequestMessage httpReqMsg = new HttpRequestMessage(new HttpMethod("PATCH"), fileLocation);
+        HttpResponseMessage response;
+
+        uploadedSize = uploadOffset;
+        if (uploadedSize != FileStream.Position)
+        {
+            FileStream.Seek(uploadOffset, SeekOrigin.Begin);
+        }
+
+        httpReqMsg.Headers.Add(TusHeaders.TusResumable, UploadOption.TusVersion.GetEnumDescription());
+        if (uploadOffset < 0)
+        {
+            httpReqMsg.Headers.Add(TusHeaders.UploadLength, totalSize.ToString());
+        }
+
+        AddCustomHeaders(httpReqMsg);
+
+        while (!CancellationToken.IsCancellationRequested)
+        {
+            if (totalSize == uploadedSize)
+            {
+                break;
+            }
+
+            var result = await pipereader.ReadAsync();
+            var buffer = result.Buffer;
+            while (TrySliceBuffer(ref buffer, out var slicedBuffer))
+            {
+                var delays = new Queue<int>(UploadOption.RetryDelays);
+                var delay = 0;
+                var chunkSize = slicedBuffer.Length;
+                var curentTryCount = 1;
+                var totalTryCount = UploadOption.RetryDelays.Count+1;
+                while (!CancellationToken.IsCancellationRequested)
+                {
+                    if (delay > 0)
+                    {
+                        await Task.Delay(delay);
+                    }
+
+                    httpReqMsg.Headers.Remove(TusHeaders.UploadOffset);
+                    httpReqMsg.Headers.Add(TusHeaders.UploadOffset, uploadedSize.ToString());
+                    httpReqMsg.Content = new ByteArrayContent(slicedBuffer.ToArray());
+                    httpReqMsg.Content.Headers.Add(TusHeaders.ContentType, TusHeaders.UploadContentTypeValue);
+                    response = await _httpClient.SendAsync(httpReqMsg, CancellationToken);
+
+                    var errMessage = string.Empty;
+                    var success = true;
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        errMessage +=
+                            $"[TUS] ({curentTryCount}/{totalTryCount}) PATCH method failed with http status code : {response.StatusCode} \n";
+                        success = false;
+                    }
+
+                    if (!response.TryGetValueOfHeader(TusHeaders.TusResumable, out var tusVersion)
+                        || tusVersion is null)
+                    {
+                        errMessage += $"[TUS] ({curentTryCount}/{totalTryCount}) Invalid header : {TusHeaders.TusResumable} = {tusVersion ?? "NULL"} \n";
+                        success = false;
+                    }
+
+                    long offset = -1;
+                    if (!response.TryGetValueOfHeader(TusHeaders.UploadOffset, out var offsetString)
+                        || offsetString is null
+                        || !long.TryParse(offsetString, out offset)
+                        || offset <= 0)
+                    {
+                        errMessage += $"[TUS] ({curentTryCount}/{totalTryCount}) Invalid header : {TusHeaders.UploadOffset} = {offsetString ?? "NULL"} \n";
+                        success = false;
+                    }
+
+                    if (!success)
+                    {
+                        if ((UploadOption.OnShouldRetry?.Invoke(response, httpReqMsg, delay) ?? true)
+                            && delays.Count <= 0)
+                        {
+                            UploadOption.OnFailed?.Invoke(response, httpReqMsg, errMessage);
+                            return;
+                        }
+
+                        UploadOption.OnFailed?.Invoke(response, httpReqMsg, errMessage);
+                        delay = delays.Dequeue();
+                        curentTryCount++;
+                        continue;
+                    }
+
+                    uploadedSize = offset;
+                    break;
+                }
+
+                UploadOption.OnProgress?.Invoke(chunkSize, uploadedSize, totalSize);
+            }
+
+            if (!result.IsCompleted) continue;
+            UploadOption.OnCompleted?.Invoke();
+            break;
+        }
+    }
+
+    private bool TrySliceBuffer(ref ReadOnlySequence<byte> buffer, out ReadOnlySequence<byte> slicedBuffer)
+    {
+        if (buffer.IsEmpty)
+        {
+            slicedBuffer = default;
+            return false;
+        }
+        var chunkSize = UploadOption.ChunkSize;
+        if (chunkSize is null || buffer.Length <= chunkSize)
+        {
+            slicedBuffer = buffer;
+            buffer = default;
+            return true;
+        }
+        
+        slicedBuffer = buffer.Slice(0, chunkSize.Value);
+        buffer = buffer.Slice(buffer.GetPosition(chunkSize.Value));
+        return true;
+    }
+
+
     private void AddCustomHeaders(HttpRequestMessage httpRequestMessage)
     {
         ValidateHttpHeaders();
@@ -163,21 +280,19 @@ public class TusUpload : IDisposable
     
      public void Dispose()
      {
+         Dispose(true);
          GC.SuppressFinalize(this);
      }
     
      protected virtual void Dispose(bool disposing)
      {
-         if (!_disposedValue)
+         if (_disposedValue) return;
+         if (disposing)
          {
-             if (disposing)
-             {
-                 //Todo dispose handles
-                 _httpClient.Dispose();
-                 _httpClient = null!;
-             }
-             _disposedValue = true;
+             _httpClient.Dispose();
+             _httpClient = null;
          }
+         _disposedValue = true;
      }
      
      
