@@ -1,4 +1,5 @@
 using System.Text;
+using blazor.tus.Constants;
 
 namespace blazor.tus;
 
@@ -21,7 +22,7 @@ public class TusUploadOption
     /// </summary>
     public List<int> RetryDelays { get; set; } = new List<int> { 0, 1000, 3000, 5000 };
 
-    public TusVersion TusVersion { get; set; } = TusVersion.V1_0_0;
+    public string TusVersion { get; set; } = Constants.TusVersion.V1;
 
     /// <summary>
     /// A number indicating the maximum size of a PATCH request body in bytes.
