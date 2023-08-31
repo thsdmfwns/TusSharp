@@ -24,19 +24,33 @@ public class TusUpload : IDisposable
     private bool _disposedValue;
     private HttpClient _httpClient = new HttpClient();
 
+    public async Task Start()
+    {
+        var create = await TusCreateAsync(); 
+        var head = await TusHeadAsync(create.FileLocation, create.TusResumableVersion);
+        await TusPatchAsync(create.FileLocation, head.UploadOffset);
+    }
+
+    public async Task StartWithUploadUri()
+    {
+        var uri = UploadOption.UploadUrl;
+        var head = await TusHeadAsync(uri!, UploadOption.TusVersion.GetEnumDescription());
+        await TusPatchAsync(uri!, head.UploadOffset);
+    }
+
     private async Task<TusCreateResponse> TusCreateAsync()
     {
         var uploadLength = FileStream.Length;
         var endpoint = UploadOption.EndPoint;
-        if (UploadOption.IsUploadDeferLength && uploadLength > 0)
-        {
-            throw new ArgumentException($"IsUploadDeferLength:[{UploadOption.IsUploadDeferLength}] can not set true if UploadLength:[{uploadLength}] is greater than zero");
-        }
-        if (!UploadOption.IsUploadDeferLength && uploadLength <= 0)
-        {
-            throw new ArgumentException($"IsUploadDeferLength:[{UploadOption.IsUploadDeferLength}] can not set false if UploadLength:[{uploadLength}] is less than zero");
-        }
         
+        switch (UploadOption.IsUploadDeferLength)
+        {
+            case true when uploadLength > 0:
+                throw new ArgumentException($"IsUploadDeferLength:[{UploadOption.IsUploadDeferLength}] can not set true if UploadLength:[{uploadLength}] is greater than zero");
+            case false when uploadLength <= 0:
+                throw new ArgumentException($"IsUploadDeferLength:[{UploadOption.IsUploadDeferLength}] can not set false if UploadLength:[{uploadLength}] is less than zero");
+        }
+
         var httpReqMsg = new HttpRequestMessage(HttpMethod.Post, UploadOption.EndPoint);
         httpReqMsg.Headers.Add(TusHeaders.TusResumable, UploadOption.TusVersion.GetEnumDescription());
         if (uploadLength > 0)
@@ -88,7 +102,7 @@ public class TusUpload : IDisposable
         };
     }
     
-    private async Task<TusHeadResponse> TusHeadAsync(string fileLocation, string tusResumableVersion)
+    private async Task<TusHeadResponse> TusHeadAsync(Uri fileLocation, string tusResumableVersion)
     {
         var httpReqMsg = new HttpRequestMessage(HttpMethod.Head, fileLocation);
         httpReqMsg.Headers.Add(TusHeaders.TusResumable, tusResumableVersion);
@@ -129,7 +143,7 @@ public class TusUpload : IDisposable
         };
     }
 
-    private async Task TusPatchAsync(string fileLocation, long uploadOffset)
+    private async Task TusPatchAsync(Uri fileLocation, long uploadOffset)
     {
         var pipereader = PipeReader.Create(FileStream);
         var totalSize = FileStream.Length;
@@ -200,7 +214,7 @@ public class TusUpload : IDisposable
                     if (!response.TryGetValueOfHeader(TusHeaders.UploadOffset, out var offsetString)
                         || offsetString is null
                         || !long.TryParse(offsetString, out offset)
-                        || offset <= 0)
+                        || offset < 0)
                     {
                         errMessage += $"[TUS] ({curentTryCount}/{totalTryCount}) Invalid header : {TusHeaders.UploadOffset} = {offsetString ?? "NULL"} \n";
                         success = false;

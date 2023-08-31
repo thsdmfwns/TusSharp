@@ -30,7 +30,7 @@ public class TusUploadOption
     /// </summary>
     public long? ChunkSize { get; set; } = 10 * 1024 * 1024; //10MB
 
-    public bool IsUploadDeferLength { get; set; }
+    public bool IsUploadDeferLength { get; set; } = false;
 
     public Dictionary<string, string> CustomHttpHeaders { get; set; } = new Dictionary<string, string>();
 

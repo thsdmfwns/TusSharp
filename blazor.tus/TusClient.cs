@@ -2,10 +2,6 @@
 
 public class TusClient
 {
-    public async Task Upload()
-    {
-        //todo add upload 
-    }
-    
-    
+    public TusUpload Upload(Stream fileStream, TusUploadOption uploadOption, CancellationToken? cancellationToken)
+        => new TusUpload(fileStream, uploadOption, cancellationToken);
 }
