@@ -93,7 +93,7 @@ public class TusUpload : IDisposable
             httpResponseMessage = await _httpClient.SendAsync(httpRequestMessage, CancellationToken);
             if (httpResponseMessage.StatusCode != HttpStatusCode.Created)
             {
-                throw new IOException($"Tus upload failed with http status code : {httpResponseMessage.StatusCode}");
+                throw new HttpRequestException($"Tus upload failed with http status code : {httpResponseMessage.StatusCode}");
             }
 
             Uri? fileUrl;
@@ -101,7 +101,7 @@ public class TusUpload : IDisposable
                 || fileUrlStr is null
                 || !Uri.TryCreate(fileUrlStr, UriKind.RelativeOrAbsolute, out fileUrl))
             {
-                throw new IOException("Invalid location header");
+                throw new ArgumentException("Invalid location header");
             }
 
             if (!fileUrlStr.StartsWith("https://") && !fileUrlStr.StartsWith("http://"))
@@ -112,7 +112,7 @@ public class TusUpload : IDisposable
             if (!httpResponseMessage.TryGetValueOfHeader(TusHeaders.TusResumable, out var tusVersion)
                 || tusVersion is null)
             {
-                throw new IOException("Invalid TusResumable header");
+                throw new ArgumentException("Invalid TusResumable header");
             }
 
             UploadOption.UploadUrl = fileUrl;
@@ -133,20 +133,20 @@ public class TusUpload : IDisposable
             httpResponseMessage = await _httpClient.SendAsync(httpRequestMessage, CancellationToken);
             if (!httpResponseMessage.IsSuccessStatusCode)
             {
-                throw new IOException($"Tus upload failed with http status code : {httpResponseMessage.StatusCode}");
+                throw new HttpRequestException($"Tus upload failed with http status code : {httpResponseMessage.StatusCode}");
             }
 
             if (!httpResponseMessage.TryGetValueOfHeader(TusHeaders.TusResumable, out var tusVersion)
                 || tusVersion is null)
             {
-                throw new IOException("Invalid TusResumable header");
+                throw new ArgumentException("Invalid TusResumable header");
             }
 
             if (!httpResponseMessage.TryGetValueOfHeader(TusHeaders.UploadOffset, out var uploadOffsetString)
                 || uploadOffsetString is null
                 || !long.TryParse(uploadOffsetString, out var uploadOffset))
             {
-                throw new IOException("Invalid UploadOffset header");
+                throw new ArgumentException("Invalid UploadOffset header");
             }
 
             if (!httpResponseMessage.TryGetValueOfHeader(TusHeaders.UploadOffset, out var uploadLengthString)
@@ -205,7 +205,7 @@ public class TusUpload : IDisposable
                     httpResponseMessage = await _httpClient.SendAsync(httpRequestMessage, CancellationToken);
                     if (!httpResponseMessage.IsSuccessStatusCode)
                     {
-                        throw new IOException(
+                        throw new HttpRequestException(
                             $"Tus upload failed with http status code : {httpResponseMessage.StatusCode} \n");
                     }
 
@@ -244,7 +244,7 @@ public class TusUpload : IDisposable
         buffer = buffer.Slice(buffer.GetPosition(chunkSize.Value));
         return true;
     }
-
+    
     private void ValidateHttpHeaders()
     {
         if (!UploadOption.CustomHttpHeaders.Any()) return;
