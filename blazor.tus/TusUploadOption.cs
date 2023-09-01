@@ -30,9 +30,7 @@ public class TusUploadOption
     /// <para>Default value: 10MB</para> 
     /// </summary>
     public long? ChunkSize { get; set; } = 10 * 1024 * 1024; //10MB
-
-    public bool IsUploadDeferLength { get; set; } = false;
-
+    
     public Dictionary<string, string> CustomHttpHeaders { get; set; } = new Dictionary<string, string>();
 
     public Dictionary<string, string> MetaData { get; set; } = new Dictionary<string, string>();
@@ -49,12 +47,13 @@ public class TusUploadOption
 
 
     /// <summary>
-    /// invoke when invoke client failed send chunk
-    /// <typeparam name="HttpResponseMessage">original Response Message</typeparam>
-    /// <typeparam name="HttpRequestMessage">original Request Message</typeparam>
+    /// invoke when invoke client failed
+    /// <typeparam name="HttpResponseMessage?">original Response Message</typeparam>
+    /// <typeparam name="HttpRequestMessage?">original Request Message</typeparam>
     /// <typeparam name="string">error Message</typeparam>
+    /// <typeparam name="Exception">error Exception</typeparam>
     /// </summary>
-    public Action<HttpResponseMessage, HttpRequestMessage, string>? OnFailed
+    public Action<HttpResponseMessage?, HttpRequestMessage?, string>? OnFailed
     {
         get;
         set;
@@ -67,26 +66,23 @@ public class TusUploadOption
     
     /// <summary>
     /// invoke once an error appears and before retrying.
-    /// <typeparam name="HttpResponseMessage">original Response Message</typeparam>
-    /// <typeparam name="HttpRequestMessage">original Request Message</typeparam>
+    /// <typeparam name="HttpResponseMessage?">original Response Message</typeparam>
+    /// <typeparam name="HttpRequestMessage?">original Request Message</typeparam>
     /// <typeparam name="int">retry Attempt</typeparam>
     /// <typeparam name="bool">return value</typeparam>
     /// <returns>function must return true if the request should be retried.</returns>
     /// </summary>
-    public Func<HttpResponseMessage, HttpRequestMessage, int, bool>? OnShouldRetry { get; set; }
+    public Func<HttpResponseMessage?, HttpRequestMessage?, int, bool>? OnShouldRetry { get; set; }
 
 
     private string SerializeMetaData()
     {
-        string[] meta = new string[MetaData.Count];
-        int index = 0;
-        foreach (var item in MetaData)
+        var meta = new string[MetaData.Count];
+        var index = 0;
+        foreach (var (key, value) in MetaData)
         {
-            string key = item.Key;
-            string value = Convert.ToBase64String(Encoding.UTF8.GetBytes(item.Value));
-            meta[index++] = $"{key} {value}";
+            meta[index++] = $"{key} {Convert.ToBase64String(Encoding.UTF8.GetBytes(value))}";
         }
-
         return string.Join(",", meta);
     }
 }
