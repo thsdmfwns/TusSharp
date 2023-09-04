@@ -131,10 +131,7 @@ public class TusUpload : IDisposable
         {
             httpRequestMessage = new HttpRequestMessage(HttpMethod.Head, UploadOption.UploadUrl!);
             httpResponseMessage = await _httpClient.SendAsync(httpRequestMessage, CancellationToken);
-            if (!httpResponseMessage.IsSuccessStatusCode)
-            {
-                throw new HttpRequestException($"Tus upload failed with http status code : {httpResponseMessage.StatusCode}");
-            }
+            httpResponseMessage.EnsureSuccessStatusCode();
 
             if (!httpResponseMessage.TryGetValueOfHeader(TusHeaders.TusResumable, out var tusVersion)
                 || tusVersion is null)
@@ -203,12 +200,8 @@ public class TusUpload : IDisposable
                     httpRequestMessage.Content = new ByteArrayContent(slicedBuffer.ToArray());
                     httpRequestMessage.Content.Headers.Add(TusHeaders.ContentType, TusHeaders.UploadContentTypeValue);
                     httpResponseMessage = await _httpClient.SendAsync(httpRequestMessage, CancellationToken);
-                    if (!httpResponseMessage.IsSuccessStatusCode)
-                    {
-                        throw new HttpRequestException(
-                            $"Tus upload failed with http status code : {httpResponseMessage.StatusCode} \n");
-                    }
-
+                    httpResponseMessage.EnsureSuccessStatusCode();
+                    
                     uploadedSize += chunkSize;
                     UploadOption.OnProgress?.Invoke(chunkSize, uploadedSize, totalSize);
                 }
@@ -223,6 +216,23 @@ public class TusUpload : IDisposable
             throw new TusException(exception.Message, exception, httpRequestMessage, httpResponseMessage);
         }
     }
+    
+    private async Task TusDeleteAsync(Uri uploadUri)
+    {
+        HttpRequestMessage? httpRequestMessage = null;
+        HttpResponseMessage? httpResponseMessage = null;
+        try
+        {
+            var httpReqMsg = new HttpRequestMessage(HttpMethod.Delete, uploadUri);
+            var response = await _httpClient.SendAsync(httpReqMsg, CancellationToken);
+            response.EnsureSuccessStatusCode();
+        }
+        catch (Exception exception)
+        {
+            throw new TusException(exception.Message, exception, httpRequestMessage, httpResponseMessage);
+        }
+    }
+
 
     private bool TrySliceBuffer(ref ReadOnlySequence<byte> buffer, out ReadOnlySequence<byte> slicedBuffer)
     {

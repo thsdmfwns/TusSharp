@@ -5,7 +5,6 @@ namespace blazor.tus;
 
 public class TusUploadOption
 {
-
     public required Uri EndPoint { get; set; }
     
     /// <summary>
@@ -20,7 +19,7 @@ public class TusUploadOption
     /// <para>Default value: [0, 1000, 3000, 5000]</para>
     /// 
     /// </summary>
-    public List<int> RetryDelays { get; set; } = new List<int> { 0, 1000, 3000, 5000 };
+    public List<int>? RetryDelays { get; set; } = new() { 0, 1000, 3000, 5000 };
 
     public string TusVersion { get; set; } = Constants.TusVersion.V1;
 
