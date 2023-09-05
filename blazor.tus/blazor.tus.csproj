@@ -10,4 +10,8 @@
       <PackageReference Include="System.IO.Pipelines" Version="7.0.0" />
     </ItemGroup>
 
+    <ItemGroup>
+      <Folder Include="Internal" />
+    </ItemGroup>
+
 </Project>

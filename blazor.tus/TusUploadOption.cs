@@ -52,7 +52,7 @@ public class TusUploadOption
     /// <typeparam name="string">error Message</typeparam>
     /// <typeparam name="Exception">error Exception</typeparam>
     /// </summary>
-    public Action<HttpResponseMessage?, HttpRequestMessage?, string>? OnFailed
+    public Action<HttpResponseMessage?, HttpRequestMessage?, string, Exception?>? OnFailed
     {
         get;
         set;

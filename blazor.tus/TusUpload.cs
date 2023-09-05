@@ -25,7 +25,7 @@ public class TusUpload : IDisposable
 
     public async Task Start()
     {
-        var delays = new Queue<int>(UploadOption.RetryDelays);
+        var delays = new Queue<int>(UploadOption.RetryDelays ?? new List<int>());
         while (!CancellationToken.IsCancellationRequested)
         {
             try
@@ -39,16 +39,20 @@ public class TusUpload : IDisposable
             catch (TusException exception)
             {
                 UploadOption.OnFailed?.Invoke(exception.OriginalResponseMessage, exception.OriginalRequestMessage,
-                    exception.Message);
+                    exception.Message, exception.InnerException);
                 if (delays.TryDequeue(out var delay)
                     && (UploadOption.OnShouldRetry?.Invoke(exception.OriginalResponseMessage,
                         exception.OriginalRequestMessage, delay) ?? true))
                 {
-                    await Task.Delay(delay);
+                    await Task.Delay(delay, CancellationToken);
                     continue;
                 }
 
-                throw;
+                return;
+            }
+            finally
+            {
+                UploadOption.OnCompleted?.Invoke();
             }
         }
     }
@@ -91,28 +95,20 @@ public class TusUpload : IDisposable
             }
 
             httpResponseMessage = await _httpClient.SendAsync(httpRequestMessage, CancellationToken);
-            if (httpResponseMessage.StatusCode != HttpStatusCode.Created)
-            {
-                throw new HttpRequestException($"Tus upload failed with http status code : {httpResponseMessage.StatusCode}");
-            }
-
+            httpResponseMessage.EnsureSuccessStatusCode();
+            httpResponseMessage.GetValueOfHeader(TusHeaders.TusResumable);
+            
             Uri? fileUrl;
             if (!httpResponseMessage.TryGetValueOfHeader(TusHeaders.Location, out var fileUrlStr)
                 || fileUrlStr is null
                 || !Uri.TryCreate(fileUrlStr, UriKind.RelativeOrAbsolute, out fileUrl))
             {
-                throw new ArgumentException("Invalid location header");
+                throw new InvalidHeaderException("Invalid location header");
             }
 
-            if (!fileUrlStr.StartsWith("https://") && !fileUrlStr.StartsWith("http://"))
+            if (!fileUrl.IsAbsoluteUri)
             {
                 fileUrl = new Uri(endpoint, fileUrl);
-            }
-
-            if (!httpResponseMessage.TryGetValueOfHeader(TusHeaders.TusResumable, out var tusVersion)
-                || tusVersion is null)
-            {
-                throw new ArgumentException("Invalid TusResumable header");
             }
 
             UploadOption.UploadUrl = fileUrl;
@@ -132,21 +128,16 @@ public class TusUpload : IDisposable
             httpRequestMessage = new HttpRequestMessage(HttpMethod.Head, UploadOption.UploadUrl!);
             httpResponseMessage = await _httpClient.SendAsync(httpRequestMessage, CancellationToken);
             httpResponseMessage.EnsureSuccessStatusCode();
-
-            if (!httpResponseMessage.TryGetValueOfHeader(TusHeaders.TusResumable, out var tusVersion)
-                || tusVersion is null)
-            {
-                throw new ArgumentException("Invalid TusResumable header");
-            }
+            httpResponseMessage.GetValueOfHeader(TusHeaders.TusResumable);
 
             if (!httpResponseMessage.TryGetValueOfHeader(TusHeaders.UploadOffset, out var uploadOffsetString)
                 || uploadOffsetString is null
                 || !long.TryParse(uploadOffsetString, out var uploadOffset))
             {
-                throw new ArgumentException("Invalid UploadOffset header");
+                throw new InvalidHeaderException("Invalid UploadOffset header");
             }
 
-            if (!httpResponseMessage.TryGetValueOfHeader(TusHeaders.UploadOffset, out var uploadLengthString)
+            if (!httpResponseMessage.TryGetValueOfHeader(TusHeaders.UploadLength, out var uploadLengthString)
                 || uploadLengthString is null
                 || !long.TryParse(uploadLengthString, out var uploadLength))
             {
@@ -171,6 +162,7 @@ public class TusUpload : IDisposable
             var pipereader = PipeReader.Create(FileStream);
             var totalSize = FileStream.Length;
             var uploadedSize = uploadOffset;
+            var firstRequest = true;
 
             if (uploadedSize != FileStream.Position)
             {
@@ -186,7 +178,8 @@ public class TusUpload : IDisposable
 
                 var result = await pipereader.ReadAsync();
                 var buffer = result.Buffer;
-                while (TrySliceBuffer(ref buffer, out var slicedBuffer))
+                while (TrySliceBuffer(ref buffer, out var slicedBuffer)
+                       && !CancellationToken.IsCancellationRequested)
                 {
                     var chunkSize = slicedBuffer.Length;
 
@@ -201,13 +194,16 @@ public class TusUpload : IDisposable
                     httpRequestMessage.Content.Headers.Add(TusHeaders.ContentType, TusHeaders.UploadContentTypeValue);
                     httpResponseMessage = await _httpClient.SendAsync(httpRequestMessage, CancellationToken);
                     httpResponseMessage.EnsureSuccessStatusCode();
-                    
+                    if (firstRequest)
+                    {
+                        firstRequest = false;
+                        httpResponseMessage.GetValueOfHeader(TusHeaders.TusResumable);
+                    }
                     uploadedSize += chunkSize;
                     UploadOption.OnProgress?.Invoke(chunkSize, uploadedSize, totalSize);
                 }
 
                 if (!result.IsCompleted) continue;
-                UploadOption.OnCompleted?.Invoke();
                 break;
             }
         }
@@ -226,6 +222,7 @@ public class TusUpload : IDisposable
             var httpReqMsg = new HttpRequestMessage(HttpMethod.Delete, uploadUri);
             var response = await _httpClient.SendAsync(httpReqMsg, CancellationToken);
             response.EnsureSuccessStatusCode();
+            response.GetValueOfHeader(TusHeaders.TusResumable);
         }
         catch (Exception exception)
         {
