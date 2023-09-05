@@ -30,7 +30,10 @@ public class TusUpload : IDisposable
             try
             {
                 SetHttpDefaultHeader();
-                if (UploadOption.UploadUrl is null) await TusCreateAsync(cancellationToken);
+                if (UploadOption.UploadUrl is null) 
+                    UploadOption.UploadUrl = await TusCreateAsync(cancellationToken);
+                if (!UploadOption.UploadUrl!.IsAbsoluteUri)
+                    UploadOption.UploadUrl = new Uri(UploadOption.EndPoint, UploadOption.UploadUrl);
                 var uploadOffset = await TusHeadAsync(cancellationToken);
                 await TusPatchAsync(UploadOption.UploadUrl!, uploadOffset, cancellationToken);
                 break;
@@ -92,7 +95,7 @@ public class TusUpload : IDisposable
             .ForEach(x => defaultHeaders.Add(x.Key, x.Value));
     }
 
-    private async Task TusCreateAsync(CancellationToken cancellationToken)
+    private async Task<Uri> TusCreateAsync(CancellationToken cancellationToken)
     {
         HttpRequestMessage? httpRequestMessage = null;
         HttpResponseMessage? httpResponseMessage = null;
@@ -127,7 +130,7 @@ public class TusUpload : IDisposable
                 fileUrl = new Uri(endpoint, fileUrl);
             }
 
-            UploadOption.UploadUrl = fileUrl;
+            return fileUrl;
         }
         catch (Exception exception)
         {
