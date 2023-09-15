@@ -1,4 +1,6 @@
 using System.Buffers;
+using System.Runtime.Intrinsics.Arm;
+using System.Security.Cryptography;
 using System.Text;
 using Bogus;
 
@@ -15,6 +17,28 @@ public class TusUploadTest
         _faker = new Faker();
     }
 
+    private string Hash(byte [] temp)
+    {
+        using (SHA256Managed sha256Managed = new SHA256Managed())
+        {
+            var hash = sha256Managed.ComputeHash(temp);
+            return Convert.ToBase64String(hash);
+        }
+    }
+
+    [Test]
+    public void seekTest()
+    {
+        var str = "123456789";
+        var stream = new MemoryStream(Encoding.UTF8.GetBytes(str));
+        stream.Seek(4, SeekOrigin.Begin);
+        var buffer = new byte[str.Length];
+        var read = stream.Read(buffer);
+        var res = Encoding.UTF8.GetString(buffer.Take(read).ToArray());
+        var expect = "56789";
+        Assert.That(res, Is.EqualTo(expect));
+    }
+
     [Test]
     [TestCase(1)]
     [TestCase(10)]
@@ -29,18 +53,45 @@ public class TusUploadTest
             EndPoint = new Uri("http://172.17.0.3:1080/files"),
             ChunkSize = chunkSize,
             RetryDelays = null,
-            OnFailed = (message, requestMessage, arg3, ex) => { err = ex?.ToString();}, 
+            OnFailed = (message, requestMessage, arg3, ex) => { err = ex!.ToString();}, 
         };
         var fileContent = _faker.Lorem.Paragraphs();
-        var stream = new MemoryStream(Encoding.UTF8.GetBytes(fileContent));
-        using var upload = client.Upload(stream, opt);
-        await upload.Start();   
+        var fileByte = Encoding.UTF8.GetBytes(fileContent);
+        var stream = new MemoryStream(fileByte);
+        using var upload = client.Upload(opt);
+        await upload.Start(stream);   
         TestContext.WriteLine(err);
         Assert.That(err, Is.Null);
         var id = opt.UploadUrl!.Segments.Last();
         var file = new FileInfo(Path.Combine(_dataPath, id));
         Assert.That(file.Exists, Is.True);
-        Assert.That(await File.ReadAllTextAsync(file.FullName), Is.EqualTo(fileContent));
+        var uploaded = await File.ReadAllBytesAsync(file.FullName);
+        Assert.That(Hash(uploaded), Is.EqualTo(Hash(fileByte)));
+    }
+    
+    [Test]
+    public async Task UploadStartBigFile()
+    {
+        var client = new TusClient();
+        string? err = null;
+        var opt = new TusUploadOption()
+        {
+            EndPoint = new Uri("http://172.17.0.3:1080/files"),
+            ChunkSize = 1 * 1024 * 1024,
+            RetryDelays = null,
+            OnFailed = (message, requestMessage, arg3, ex) => { err = ex!.ToString();},
+        };
+        using var stream = File.OpenRead("/home/son/test.mp4");
+        using var upload = client.Upload(opt);
+        await upload.Start(stream);   
+        TestContext.WriteLine(err);
+        Assert.That(err, Is.Null);
+        var id = opt.UploadUrl!.Segments.Last();
+        var file = new FileInfo(Path.Combine(_dataPath, id));
+        Assert.That(file.Exists, Is.True);
+        var data = await File.ReadAllBytesAsync("/home/son/test.mp4");
+        var uploaded = await File.ReadAllBytesAsync(file.FullName);
+        Assert.That(Hash(uploaded), Is.EqualTo(Hash(data)));
     }
 
     [Test]
@@ -63,19 +114,66 @@ public class TusUploadTest
             }
         };
         var fileContent = _faker.Lorem.Paragraphs();
-        var stream = new MemoryStream(Encoding.UTF8.GetBytes(fileContent));
-        using var upload = client.Upload(stream, opt);
-        await upload.Start(token.Token);
+        var fileByte = Encoding.UTF8.GetBytes(fileContent);
+        var stream = new MemoryStream(fileByte);
+        using var upload = client.Upload(opt);
+        await upload.Start(stream, token.Token);
         Assert.That(opt.UploadUrl, Is.Not.Null);
         Assert.That(err, Is.Empty);
 
         err = string.Empty;
-        await upload.Start();
+        stream = new MemoryStream(Encoding.UTF8.GetBytes(fileContent));
+        await upload.Start(stream);
         Assert.That(err, Is.Empty);
         var id = opt.UploadUrl!.Segments.Last();
         var file = new FileInfo(Path.Combine(_dataPath, id));
         Assert.That(file.Exists, Is.True);
+        var uploaded = await File.ReadAllBytesAsync(file.FullName);
+        Assert.That(Hash(uploaded), Is.EqualTo(Hash(fileByte)));
         Assert.That(await File.ReadAllTextAsync(file.FullName), Is.EqualTo(fileContent));
+    }
+    
+    [Test]
+    public async Task UploadBigFileResume()
+    {
+        var client = new TusClient();
+        var err = string.Empty;
+        var token = new CancellationTokenSource();
+        var opt = new TusUploadOption()
+        {
+            EndPoint = new Uri("http://172.17.0.3:1080/files"),
+            ChunkSize = 1 * 1024 * 1024,
+            RetryDelays = null,
+            OnFailed = (message, requestMessage, arg3, ex) => { err += $"{ex}";},
+            OnProgress = (chunkSize, uploaded, total) => {
+                if (total/3 < uploaded)
+                {
+                    token.Cancel();  
+                }
+            }
+        };
+        using var upload = client.Upload(opt);
+
+        using (var stream = File.OpenRead("/home/son/test.mp4"))
+        {
+            await upload.Start(stream, token.Token);
+            Assert.That(opt.UploadUrl, Is.Not.Null);
+            Assert.That(err, Is.Empty);
+        }
+
+        err = string.Empty;
+        using (var restream = File.OpenRead("/home/son/test.mp4"))
+        {
+            await upload.Start(restream);
+            Assert.That(err, Is.Empty);
+        }
+        
+        var id = opt.UploadUrl!.Segments.Last();
+        var file = new FileInfo(Path.Combine(_dataPath, id));
+        Assert.That(file.Exists, Is.True);
+        var data = await File.ReadAllBytesAsync("/home/son/test.mp4");
+        var uploaded = await File.ReadAllBytesAsync(file.FullName);
+        Assert.That(Hash(uploaded), Is.EqualTo(Hash(data)));
     }
 
     [Test]
@@ -93,9 +191,9 @@ public class TusUploadTest
         };
         var fileContent = _faker.Lorem.Paragraphs();
         var stream = new MemoryStream(Encoding.UTF8.GetBytes(fileContent));
-        using (var upload = client.Upload(stream, opt))
+        using (var upload = client.Upload(opt))
         {
-            await upload.Start();
+            await upload.Start(stream);
         }
         Assert.That(err, Is.Not.Null);
         Assert.That(err is HttpRequestException, Is.True);
@@ -121,9 +219,9 @@ public class TusUploadTest
         };
         var fileContent = _faker.Lorem.Paragraphs();
         var stream = new MemoryStream(Encoding.UTF8.GetBytes(fileContent));
-        using (var upload = client.Upload(stream, opt))
+        using (var upload = client.Upload(opt))
         {
-            await upload.Start();
+            await upload.Start(stream);
         }
         Assert.That(retryCount, Is.EqualTo(opt.RetryDelays!.Count));
         Assert.That(completedCount, Is.EqualTo(1));
@@ -147,9 +245,9 @@ public class TusUploadTest
         };
         var fileContent = _faker.Lorem.Paragraphs();
         var stream = new MemoryStream(Encoding.UTF8.GetBytes(fileContent));
-        using (var upload = client.Upload(stream, opt))
+        using (var upload = client.Upload(opt))
         {
-            await upload.Start();
+            await upload.Start(stream);
         }
         Assert.That(retryCount, Is.EqualTo(1));
     }
@@ -176,8 +274,8 @@ public class TusUploadTest
         };
         var fileContent = _faker.Lorem.Paragraphs();
         var stream = new MemoryStream(Encoding.UTF8.GetBytes(fileContent));
-        using var upload = client.Upload(stream, opt);
-        await upload.Start(token.Token);
+        using var upload = client.Upload(opt);
+        await upload.Start(stream, token.Token);
         Assert.That(opt.UploadUrl, Is.Not.Null);
         Assert.That(err, Is.Empty);
         var id = opt.UploadUrl!.Segments.Last();
