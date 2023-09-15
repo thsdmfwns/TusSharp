@@ -1,8 +1,5 @@
 using System.Buffers;
 using System.IO.Pipelines;
-using System.Net;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using blazor.tus.Constants;
 using blazor.tus.Execption;
@@ -147,17 +144,10 @@ public class TusUpload : IDisposable
         }
         var opt = new PipeOptions(minimumSegmentSize: 100 * 1024);
         var pipe = new Pipe(opt);
-        Task writing = FillPipeAsync(pipe.Writer, stream, cancellationToken);
+        Task writing = stream.CopyToAsync(pipe.Writer, cancellationToken);
         Task reading = TusPatchAsync(UploadOption.UploadUrl!, stream.Length, uploadOffset,
             pipe.Reader, cancellationToken);
         await Task.WhenAll(reading, writing);
-    }
-
-    private async Task FillPipeAsync(PipeWriter pipeWriter, AsyncDisposableStream stream, CancellationToken cancellationToken)
-    {
-        await stream.CopyToAsync(pipeWriter, cancellationToken);
-        await pipeWriter.FlushAsync();
-        await pipeWriter.CompleteAsync();
     }
 
     private async Task<Uri> TusCreateAsync(long uploadLength,CancellationToken cancellationToken)

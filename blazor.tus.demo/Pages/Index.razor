@@ -1,0 +1,71 @@
+﻿@page "/"
+@using Tewr.Blazor.FileReader
+@inject IFileReaderService fileReaderService;
+
+<PageTitle>Tus upload Demo</PageTitle>
+
+<div class="input-group mb-3">
+    <div class="input-group-prepend">
+        <span class="input-group-text" id="basic-addon1">endPoint</span>
+    </div>
+    <input @bind="endPoint" type="text" class="form-control" placeholder="endPoint" aria-label="endPoint" aria-describedby="basic-addon1">
+</div>
+
+<input type="file" @ref=inputTypeFileElement />
+<button @onclick=upload>upload</button>
+
+<h1>@ProgressPercentage%</h1>
+
+<textarea style="max-width: 100%;" cols="60" rows="20">@console</textarea>
+
+@code
+{
+    string endPoint { get; set; }
+    
+    TusUploadOption _option { get; set; }
+
+    double ProgressPercentage { get; set; } = 0;
+
+    TusClient _tusClient = new TusClient();
+
+    private ElementReference inputTypeFileElement;
+
+    string console = string.Empty;
+
+    async Task upload()
+    {
+        ProgressPercentage = 0;
+        var files = await fileReaderService.CreateReference(inputTypeFileElement).EnumerateFilesAsync();
+        var file = files.First();
+        var endpoint = new Uri(endPoint);
+        var fileInfo = await file.ReadFileInfoAsync();
+        var opt = new TusUploadOption()
+        {
+            EndPoint = endpoint,
+            ChunkSize = 1 * 1024 * 1024, //10mb 
+            MetaData = new Dictionary<string, string>()
+            {
+                {"filename", fileInfo.Name}
+            },
+            OnCompleted = () =>
+            {
+                console += "completed upload \n";
+                StateHasChanged();
+            },
+            OnFailed = (res, req, errMsg, exception) =>
+            {
+                Console.Error.WriteLine(exception);
+                console += $"upload failed beacuse : {errMsg} \n";
+                StateHasChanged();
+            },
+            OnProgress = (chunkSize, uploadedSize, totalSize) =>
+            {
+                ProgressPercentage = (double)uploadedSize / totalSize * 100;
+                console += $"upload | chunkSize : {chunkSize} | uploadedSize : {uploadedSize} | total : {totalSize} \n";
+                StateHasChanged();
+            }
+        };
+        using var upload = _tusClient.Upload(opt);
+        await upload.StartWithFileReader(file);
+    }
+}

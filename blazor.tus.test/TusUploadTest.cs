@@ -10,7 +10,7 @@ public class TusUploadTest
 {
     private Faker _faker;
     private readonly string _dataPath = "/mt/nvme1n1p2/tusd-data";
-    
+    private readonly Uri _endpoint = new("http://172.17.0.3:1080/files");
     [SetUp]
     public void Setup()
     {
@@ -27,19 +27,6 @@ public class TusUploadTest
     }
 
     [Test]
-    public void seekTest()
-    {
-        var str = "123456789";
-        var stream = new MemoryStream(Encoding.UTF8.GetBytes(str));
-        stream.Seek(4, SeekOrigin.Begin);
-        var buffer = new byte[str.Length];
-        var read = stream.Read(buffer);
-        var res = Encoding.UTF8.GetString(buffer.Take(read).ToArray());
-        var expect = "56789";
-        Assert.That(res, Is.EqualTo(expect));
-    }
-
-    [Test]
     [TestCase(1)]
     [TestCase(10)]
     [TestCase(100)]
@@ -50,7 +37,7 @@ public class TusUploadTest
         string? err = null;
         var opt = new TusUploadOption()
         {
-            EndPoint = new Uri("http://172.17.0.3:1080/files"),
+            EndPoint = _endpoint,
             ChunkSize = chunkSize,
             RetryDelays = null,
             OnFailed = (message, requestMessage, arg3, ex) => { err = ex!.ToString();}, 
@@ -76,7 +63,7 @@ public class TusUploadTest
         string? err = null;
         var opt = new TusUploadOption()
         {
-            EndPoint = new Uri("http://172.17.0.3:1080/files"),
+            EndPoint = _endpoint,
             ChunkSize = 1 * 1024 * 1024,
             RetryDelays = null,
             OnFailed = (message, requestMessage, arg3, ex) => { err = ex!.ToString();},
@@ -102,7 +89,7 @@ public class TusUploadTest
         var token = new CancellationTokenSource();
         var opt = new TusUploadOption()
         {
-            EndPoint = new Uri("http://172.17.0.3:1080/files"),
+            EndPoint = _endpoint,
             ChunkSize = 10,
             RetryDelays = null,
             OnFailed = (message, requestMessage, arg3, ex) => { err += $"{ex}";},
@@ -141,7 +128,7 @@ public class TusUploadTest
         var token = new CancellationTokenSource();
         var opt = new TusUploadOption()
         {
-            EndPoint = new Uri("http://172.17.0.3:1080/files"),
+            EndPoint = _endpoint,
             ChunkSize = 1 * 1024 * 1024,
             RetryDelays = null,
             OnFailed = (message, requestMessage, arg3, ex) => { err += $"{ex}";},
@@ -183,7 +170,7 @@ public class TusUploadTest
         Exception? err = null;
         var opt = new TusUploadOption()
         {
-            EndPoint = new Uri("http://172.17.0.3:1080/files"),
+            EndPoint = _endpoint,
             ChunkSize = 10,
             TusVersion = string.Empty,
             RetryDelays = null,
@@ -207,7 +194,7 @@ public class TusUploadTest
         var completedCount = 0;
         var opt = new TusUploadOption()
         {
-            EndPoint = new Uri("http://172.17.0.3:1080/files"),
+            EndPoint = _endpoint,
             ChunkSize = 10,
             TusVersion = string.Empty,
             OnShouldRetry = (message, requestMessage, arg3) =>
@@ -234,7 +221,7 @@ public class TusUploadTest
         var retryCount = 0;
         var opt = new TusUploadOption()
         {
-            EndPoint = new Uri("http://172.17.0.3:1080/files"),
+            EndPoint = _endpoint,
             ChunkSize = 10,
             TusVersion = string.Empty,
             OnShouldRetry = (message, requestMessage, arg3) =>
@@ -260,7 +247,7 @@ public class TusUploadTest
         var token = new CancellationTokenSource();
         var opt = new TusUploadOption()
         {
-            EndPoint = new Uri("http://172.17.0.3:1080/files"),
+            EndPoint = _endpoint,
             ChunkSize = 10,
             RetryDelays = null,
             OnFailed = (message, requestMessage, arg3, ex) => { err += $"{ex}"; },
@@ -292,9 +279,8 @@ public class TusUploadTest
     public async Task Option()
     {
         var client = new TusClient();
-        var endPoint = new Uri("http://172.17.0.3:1080/files");
+        var endPoint = _endpoint;
         var res = await client.SendOption(endPoint);
-        res.TusExtension!.ForEach(Console.WriteLine);
         Assert.That(res.TusVersion, Does.Contain("1.0.0"));
         Assert.That(res.TusExtension, Is.Not.Empty);
     }

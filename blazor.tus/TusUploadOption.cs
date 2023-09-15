@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text;
 using blazor.tus.Constants;
 
@@ -5,8 +6,11 @@ namespace blazor.tus;
 
 public class TusUploadOption
 {
+#if NET7_0
     public required Uri EndPoint { get; set; }
-    
+#else
+    public Uri EndPoint { get; set; }
+#endif
     /// <summary>
     /// A URL which will be used to directly attempt a resume without creating an upload first.
     /// <para>Only if the resume attempt fails it will fall back to creating a new upload using the URL specified in the endpoint option.</para>
