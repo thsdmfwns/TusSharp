@@ -28,7 +28,7 @@ public class TusUploadOption
     /// <para>Null means that client will try to upload the entire file in one request.</para> 
     /// <para>Default value: 10MB</para> 
     /// </summary>
-    public long? ChunkSize { get; set; } = 10 * 1024 * 1024; //10MB
+    public long ChunkSize { get; set; } = 10 * 1024 * 1024; //10MB
     
     public Dictionary<string, string> CustomHttpHeaders { get; set; } = new Dictionary<string, string>();
 

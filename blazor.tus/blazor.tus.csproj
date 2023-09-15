@@ -4,10 +4,20 @@
         <TargetFramework>net7.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
+        <Version>1.0.0</Version>
+        <Authors>SonDev</Authors>
+        <Product>blazor.tus</Product>
+        <PackageProjectUrl>https://github.com/thsdmfwns/blazor.tus</PackageProjectUrl>
+        <PackageTags>tus;upload;http;streaming;pipeline;resumable file upload;</PackageTags>
+        <Description>
+            Tus, resumable file upload client for .Net Blazor
+        </Description>
+        <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     </PropertyGroup>
 
     <ItemGroup>
       <PackageReference Include="System.IO.Pipelines" Version="7.0.0" />
+      <PackageReference Include="Tewr.Blazor.FileReader" Version="3.3.2.23201" />
     </ItemGroup>
 
     <ItemGroup>

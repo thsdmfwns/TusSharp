@@ -1,41 +1,45 @@
 using System.Buffers;
 using System.IO.Pipelines;
 using System.Net;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using blazor.tus.Constants;
 using blazor.tus.Execption;
 using blazor.tus.Infrastructure;
+using Tewr.Blazor.FileReader;
 
 namespace blazor.tus;
 
 public class TusUpload : IDisposable
 {
-    public TusUpload(Stream fileStream, TusUploadOption uploadOption)
+    public TusUpload(TusUploadOption uploadOption)
     {
-        _fileStream = fileStream;
         UploadOption = uploadOption;
     }
 
     public readonly TusUploadOption UploadOption;
     public bool IsDisposed { get; private set; }
 
-    private Stream _fileStream;
     private HttpClient _httpClient = new();
 
-    public async Task Start(CancellationToken cancellationToken = default)
+    public async Task StartWithFileReader(IFileReference file, CancellationToken cancellationToken = default)
     {
         var delays = new Queue<int>(UploadOption.RetryDelays ?? new List<int>());
         while (!cancellationToken.IsCancellationRequested)
         {
             try
             {
+                await using var stream = await file.OpenReadAsync();
                 SetHttpDefaultHeader();
-                if (UploadOption.UploadUrl is null) 
-                    UploadOption.UploadUrl = await TusCreateAsync(cancellationToken);
+                if (UploadOption.UploadUrl is null)
+                {
+                    UploadOption.UploadUrl = await TusCreateAsync(stream.Length, cancellationToken);
+                }
                 if (!UploadOption.UploadUrl!.IsAbsoluteUri)
                     UploadOption.UploadUrl = new Uri(UploadOption.EndPoint, UploadOption.UploadUrl);
                 var uploadOffset = await TusHeadAsync(cancellationToken);
-                await TusPatchAsync(UploadOption.UploadUrl!, uploadOffset, cancellationToken);
+                await TusPatchWithFileReader(stream, uploadOffset, cancellationToken);
                 break;
             }
             catch (TusException exception)
@@ -52,6 +56,46 @@ public class TusUpload : IDisposable
                 break;
             }
         }
+        UploadOption.OnCompleted?.Invoke();
+    }
+
+    public async Task Start(Stream fileStream, CancellationToken cancellationToken = default)
+    {
+        var delays = new Queue<int>(UploadOption.RetryDelays ?? new List<int>());
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                SetHttpDefaultHeader();
+                if (UploadOption.UploadUrl is null)
+                    UploadOption.UploadUrl = await TusCreateAsync(fileStream.Length, cancellationToken);
+                if (!UploadOption.UploadUrl!.IsAbsoluteUri)
+                    UploadOption.UploadUrl = new Uri(UploadOption.EndPoint, UploadOption.UploadUrl);
+                var uploadOffset = await TusHeadAsync(cancellationToken);
+                if (uploadOffset != fileStream.Position)
+                {
+                    fileStream.Seek(uploadOffset, SeekOrigin.Begin);
+                }
+                await TusPatchAsync(UploadOption.UploadUrl!, fileStream.Length, uploadOffset,
+                    PipeReader.Create(fileStream), cancellationToken);
+                break;
+            }
+            catch (TusException exception)
+            {
+                UploadOption.OnFailed?.Invoke(exception.OriginalResponseMessage, exception.OriginalRequestMessage,
+                    exception.Message, exception.InnerException);
+                if (delays.TryDequeue(out var delay)
+                    && (UploadOption.OnShouldRetry?.Invoke(exception.OriginalResponseMessage,
+                        exception.OriginalRequestMessage, delay) ?? true))
+                {
+                    await Task.Delay(delay, cancellationToken);
+                    continue;
+                }
+
+                break;
+            }
+        }
+
         UploadOption.OnCompleted?.Invoke();
     }
 
@@ -95,13 +139,33 @@ public class TusUpload : IDisposable
             .ForEach(x => defaultHeaders.Add(x.Key, x.Value));
     }
 
-    private async Task<Uri> TusCreateAsync(CancellationToken cancellationToken)
+    private async Task TusPatchWithFileReader(AsyncDisposableStream stream, long uploadOffset, CancellationToken cancellationToken)
+    {
+        if (uploadOffset != stream.Position)
+        {
+            stream.Seek(uploadOffset, SeekOrigin.Begin);
+        }
+        var opt = new PipeOptions(minimumSegmentSize: 100 * 1024);
+        var pipe = new Pipe(opt);
+        Task writing = FillPipeAsync(pipe.Writer, stream, cancellationToken);
+        Task reading = TusPatchAsync(UploadOption.UploadUrl!, stream.Length, uploadOffset,
+            pipe.Reader, cancellationToken);
+        await Task.WhenAll(reading, writing);
+    }
+
+    private async Task FillPipeAsync(PipeWriter pipeWriter, AsyncDisposableStream stream, CancellationToken cancellationToken)
+    {
+        await stream.CopyToAsync(pipeWriter, cancellationToken);
+        await pipeWriter.FlushAsync();
+        await pipeWriter.CompleteAsync();
+    }
+
+    private async Task<Uri> TusCreateAsync(long uploadLength,CancellationToken cancellationToken)
     {
         HttpRequestMessage? httpRequestMessage = null;
         HttpResponseMessage? httpResponseMessage = null;
         try
         {
-            var uploadLength = _fileStream.Length;
             var endpoint = UploadOption.EndPoint;
             httpRequestMessage = new HttpRequestMessage(HttpMethod.Post, UploadOption.EndPoint);
             if (uploadLength > 0)
@@ -172,44 +236,39 @@ public class TusUpload : IDisposable
         }
     }
 
-    private async Task TusPatchAsync(Uri fileLocation, long uploadOffset, CancellationToken cancellationToken)
+    private async Task TusPatchAsync(Uri fileLocation, long fileSize, long uploadOffset, PipeReader pipereader, CancellationToken cancellationToken)
     {
         HttpRequestMessage? httpRequestMessage = null;
         HttpResponseMessage? httpResponseMessage = null;
         try
         {
-            var pipereader = PipeReader.Create(_fileStream);
-            var totalSize = _fileStream.Length;
             var uploadedSize = uploadOffset;
             var firstRequest = true;
-
-            if (uploadedSize != _fileStream.Position)
+            while (!cancellationToken.IsCancellationRequested && fileSize != uploadedSize)
             {
-                _fileStream.Seek(uploadOffset, SeekOrigin.Begin);
-            }
-
-            while (!cancellationToken.IsCancellationRequested)
-            {
-                if (totalSize == uploadedSize)
+                ReadResult result;
+                if (fileSize < uploadedSize + UploadOption.ChunkSize )
                 {
-                    break;
+                    result = await pipereader.ReadAtLeastAsync((int)(fileSize - uploadedSize) ,cancellationToken);
                 }
-
-                var result = await pipereader.ReadAsync();
+                else
+                {
+                    result = await pipereader.ReadAtLeastAsync((int)UploadOption.ChunkSize ,cancellationToken);
+                }
                 var buffer = result.Buffer;
-                while (TrySliceBuffer(ref buffer, out var slicedBuffer)
+                var isLast = false;
+                while (TrySliceBuffer(ref buffer, ref isLast, out var slicedBuffer)
                        && !cancellationToken.IsCancellationRequested)
                 {
                     var chunkSize = slicedBuffer.Length;
-
                     httpRequestMessage = new HttpRequestMessage(new HttpMethod("PATCH"), fileLocation);
                     httpRequestMessage.Headers.Add(TusHeaders.UploadOffset, uploadedSize.ToString());
                     if (uploadOffset < 0)
                     {
-                        httpRequestMessage.Headers.Add(TusHeaders.UploadLength, totalSize.ToString());
+                        httpRequestMessage.Headers.Add(TusHeaders.UploadLength, fileSize.ToString());
                     }
-
-                    httpRequestMessage.Content = new ByteArrayContent(slicedBuffer.ToArray());
+                    var chunk = slicedBuffer.ToArray();
+                    httpRequestMessage.Content = new ByteArrayContent(chunk);
                     httpRequestMessage.Content.Headers.Add(TusHeaders.ContentType, TusHeaders.UploadContentTypeValue);
                     httpResponseMessage = await _httpClient.SendAsync(httpRequestMessage, cancellationToken);
                     httpResponseMessage.EnsureSuccessStatusCode();
@@ -219,19 +278,22 @@ public class TusUpload : IDisposable
                         httpResponseMessage.GetValueOfHeader(TusHeaders.TusResumable);
                     }
                     uploadedSize += chunkSize;
-                    UploadOption.OnProgress?.Invoke(chunkSize, uploadedSize, totalSize);
+                    UploadOption.OnProgress?.Invoke(chunkSize, uploadedSize, fileSize);
                 }
-
-                if (!result.IsCompleted) continue;
-                break;
+                pipereader.AdvanceTo(buffer.End);
+                if (result.IsCompleted) break;
             }
         }
         catch (Exception exception)
         {
             throw new TusException(exception.Message, exception, httpRequestMessage, httpResponseMessage);
         }
+        finally
+        {
+            await pipereader.CompleteAsync();
+        }
     }
-    
+
     private async Task TusDeleteAsync(Uri uploadUri, CancellationToken cancellationToken)
     {
         HttpRequestMessage? httpRequestMessage = null;
@@ -250,24 +312,24 @@ public class TusUpload : IDisposable
     }
 
 
-    private bool TrySliceBuffer(ref ReadOnlySequence<byte> buffer, out ReadOnlySequence<byte> slicedBuffer)
+    private bool TrySliceBuffer(ref ReadOnlySequence<byte> buffer, ref bool isLast, out ReadOnlySequence<byte> slicedBuffer)
     {
-        if (buffer.IsEmpty)
+        if (isLast)
         {
-            slicedBuffer = default;
+            slicedBuffer = ReadOnlySequence<byte>.Empty;
             return false;
         }
 
         var chunkSize = UploadOption.ChunkSize;
-        if (chunkSize is null || buffer.Length <= chunkSize)
+        if (buffer.Length <= chunkSize)
         {
             slicedBuffer = buffer;
-            buffer = default;
+            isLast = true;
             return true;
         }
 
-        slicedBuffer = buffer.Slice(0, chunkSize.Value);
-        buffer = buffer.Slice(buffer.GetPosition(chunkSize.Value));
+        slicedBuffer = buffer.Slice(0, chunkSize);
+        buffer = buffer.Slice(buffer.GetPosition(chunkSize));
         return true;
     }
     

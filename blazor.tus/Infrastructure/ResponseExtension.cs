@@ -18,10 +18,10 @@ namespace blazor.tus.Infrastructure
         {
             try
             {
-                var headers = response.Headers.GetValues(key);
-                return headers.First();
+                if (!response.Headers.TryGetValues(key.ToLower(), out var values)) throw new InvalidOperationException();
+                return values.First();
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException)
             {
                 throw new InvalidHeaderException($"Invalid {key} header");
             }

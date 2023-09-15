@@ -5,8 +5,8 @@ namespace blazor.tus;
 
 public class TusClient
 {
-    public TusUpload Upload(Stream fileStream, TusUploadOption uploadOption)
-        => new TusUpload(fileStream, uploadOption);
+    public TusUpload Upload(TusUploadOption uploadOption)
+        => new TusUpload(uploadOption);
 
     /// <summary>
     ///  OPTIONS request MAY be used to gather information about the Server’s current configuration
