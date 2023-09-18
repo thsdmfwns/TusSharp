@@ -8,7 +8,7 @@
 > the user wants to pause, or by accident in case of an network issue or server
 > outage.
 
-blazor.tus is a simple **.net** client for the [tus resumable upload protocol](http://tus.io) and can be used inside **.net applications** **.net blazor**.
+blazor.tus is a simple **.net** client for the [tus resumable upload protocol](http://tus.io) and can be used inside **.net applications** and **.net blazor**.
 
 **Protocol version:** 1.0.0
 
@@ -116,7 +116,7 @@ in Blazor
 }
 ```
 
-## Realated solutions
+## Related solutions
 
 [BlazorFileReader](https://github.com/Tewr/BlazorFileReader) : Used to get the file stream available to Blazor.
 
