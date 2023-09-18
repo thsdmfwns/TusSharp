@@ -1,4 +1,4 @@
-namespace blazor.tus.Execption;
+namespace TusSharp.Execption;
 
 public class InvalidHeaderException : Exception
 {

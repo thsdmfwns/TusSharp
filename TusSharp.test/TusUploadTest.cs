@@ -1,10 +1,8 @@
-using System.Buffers;
-using System.Runtime.Intrinsics.Arm;
 using System.Security.Cryptography;
 using System.Text;
 using Bogus;
 
-namespace blazor.tus.test;
+namespace TusSharp.Test;
 
 public class TusUploadTest
 {

@@ -1,8 +1,6 @@
-using System.Runtime.CompilerServices;
 using System.Text;
-using blazor.tus.Constants;
 
-namespace blazor.tus;
+namespace TusSharp;
 
 public class TusUploadOption
 {

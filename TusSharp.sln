@@ -1,10 +1,8 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "blazor.tus", "blazor.tus\blazor.tus.csproj", "{A2CC9A59-BD53-4360-8BAD-A4C68B9D0575}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TusSharp", "TusSharp\TusSharp.csproj", "{A2CC9A59-BD53-4360-8BAD-A4C68B9D0575}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "blazor.tus.test", "blazor.tus.test\blazor.tus.test.csproj", "{1B32E56D-6E8F-465C-B037-4A3458AFF062}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "blazor.tus.demo", "blazor.tus.demo\blazor.tus.demo.csproj", "{DF233928-705A-41CC-A83D-34C6EA3AC9C2}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TusSharp.test", "TusSharp.test\TusSharp.test.csproj", "{1B32E56D-6E8F-465C-B037-4A3458AFF062}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -20,9 +18,5 @@ Global
 		{1B32E56D-6E8F-465C-B037-4A3458AFF062}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{1B32E56D-6E8F-465C-B037-4A3458AFF062}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{1B32E56D-6E8F-465C-B037-4A3458AFF062}.Release|Any CPU.Build.0 = Release|Any CPU
-		{DF233928-705A-41CC-A83D-34C6EA3AC9C2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{DF233928-705A-41CC-A83D-34C6EA3AC9C2}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{DF233928-705A-41CC-A83D-34C6EA3AC9C2}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{DF233928-705A-41CC-A83D-34C6EA3AC9C2}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

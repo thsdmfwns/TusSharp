@@ -1,4 +1,4 @@
-namespace blazor.tus.Constants;
+namespace TusSharp.Constants;
 
 internal static class TusVersion
 {

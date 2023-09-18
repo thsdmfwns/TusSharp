@@ -1,6 +1,4 @@
-using System.Collections.Generic;
-
-namespace blazor.tus.Constants;
+namespace TusSharp.Constants;
 
 internal static class TusHeaders
 {

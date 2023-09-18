@@ -1,8 +1,6 @@
-using System.Linq;
-using System.Net.Http;
-using blazor.tus.Execption;
+using TusSharp.Execption;
 
-namespace blazor.tus.Infrastructure
+namespace TusSharp.Infrastructure
 {
     public static class ResponseExtension
     {

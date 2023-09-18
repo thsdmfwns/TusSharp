@@ -6,6 +6,10 @@
         <Nullable>enable</Nullable>
 
         <IsPackable>false</IsPackable>
+
+        <AssemblyName>TusSharp.Test</AssemblyName>
+
+        <RootNamespace>TusSharp.Test</RootNamespace>
     </PropertyGroup>
 
     <ItemGroup>
@@ -18,7 +22,7 @@
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\blazor.tus\blazor.tus.csproj" />
+      <ProjectReference Include="..\TusSharp\TusSharp.csproj" />
     </ItemGroup>
 
 </Project>

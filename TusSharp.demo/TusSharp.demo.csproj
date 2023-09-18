@@ -4,6 +4,7 @@
     <TargetFramework>net7.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>blazor.tus.demo</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
@@ -12,7 +13,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\blazor.tus\blazor.tus.csproj" />
+    <ProjectReference Include="..\TusSharp\TusSharp.csproj" />
   </ItemGroup>
 
   <ItemGroup>

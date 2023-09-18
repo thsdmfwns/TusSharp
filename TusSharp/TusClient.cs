@@ -1,7 +1,7 @@
-﻿using blazor.tus.Constants;
-using blazor.tus.Infrastructure;
+﻿using TusSharp.Constants;
+using TusSharp.Infrastructure;
 
-namespace blazor.tus;
+namespace TusSharp;
 
 public class TusClient
 {

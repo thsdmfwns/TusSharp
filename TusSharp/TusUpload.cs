@@ -1,12 +1,11 @@
 using System.Buffers;
 using System.IO.Pipelines;
 using System.Text.Json;
-using blazor.tus.Constants;
-using blazor.tus.Execption;
-using blazor.tus.Infrastructure;
-using Tewr.Blazor.FileReader;
+using TusSharp.Constants;
+using TusSharp.Execption;
+using TusSharp.Infrastructure;
 
-namespace blazor.tus;
+namespace TusSharp;
 
 public class TusUpload : IDisposable
 {
@@ -19,42 +18,6 @@ public class TusUpload : IDisposable
     public bool IsDisposed { get; private set; }
 
     private HttpClient _httpClient = new();
-
-    public async Task StartWithFileReader(IFileReference file, CancellationToken cancellationToken = default)
-    {
-        var delays = new Queue<int>(UploadOption.RetryDelays ?? new List<int>());
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            try
-            {
-                await using var stream = await file.OpenReadAsync();
-                SetHttpDefaultHeader();
-                if (UploadOption.UploadUrl is null)
-                {
-                    UploadOption.UploadUrl = await TusCreateAsync(stream.Length, cancellationToken);
-                }
-                if (!UploadOption.UploadUrl!.IsAbsoluteUri)
-                    UploadOption.UploadUrl = new Uri(UploadOption.EndPoint, UploadOption.UploadUrl);
-                var uploadOffset = await TusHeadAsync(cancellationToken);
-                await TusPatchWithFileReader(stream, uploadOffset, cancellationToken);
-                break;
-            }
-            catch (TusException exception)
-            {
-                UploadOption.OnFailed?.Invoke(exception.OriginalResponseMessage, exception.OriginalRequestMessage,
-                    exception.Message, exception.InnerException);
-                if (delays.TryDequeue(out var delay)
-                    && (UploadOption.OnShouldRetry?.Invoke(exception.OriginalResponseMessage,
-                        exception.OriginalRequestMessage, delay) ?? true))
-                {
-                    await Task.Delay(delay, cancellationToken);
-                    continue;
-                }
-                break;
-            }
-        }
-        UploadOption.OnCompleted?.Invoke();
-    }
 
     public async Task Start(Stream fileStream, CancellationToken cancellationToken = default)
     {
@@ -103,7 +66,7 @@ public class TusUpload : IDisposable
             if (UploadOption.UploadUrl is null)
             {
                 UploadOption.OnFailed?.Invoke(null, null,
-                    "UploadOption.UploadUrl is null.", new ArgumentNullException("UploadOption.UploadUrl"));
+                    "UploadOption.UploadUrl is null.", new ArgumentNullException("TusSharp.UploadOption.UploadUrl"));
                 return;
             }
             SetHttpDefaultHeader();
@@ -134,20 +97,6 @@ public class TusUpload : IDisposable
         ValidateHttpHeaders();
         UploadOption.CustomHttpHeaders.ToList()
             .ForEach(x => defaultHeaders.Add(x.Key, x.Value));
-    }
-
-    private async Task TusPatchWithFileReader(AsyncDisposableStream stream, long uploadOffset, CancellationToken cancellationToken)
-    {
-        if (uploadOffset != stream.Position)
-        {
-            stream.Seek(uploadOffset, SeekOrigin.Begin);
-        }
-        var opt = new PipeOptions(minimumSegmentSize: 100 * 1024);
-        var pipe = new Pipe(opt);
-        Task writing = stream.CopyToAsync(pipe.Writer, cancellationToken);
-        Task reading = TusPatchAsync(UploadOption.UploadUrl!, stream.Length, uploadOffset,
-            pipe.Reader, cancellationToken);
-        await Task.WhenAll(reading, writing);
     }
 
     private async Task<Uri> TusCreateAsync(long uploadLength,CancellationToken cancellationToken)

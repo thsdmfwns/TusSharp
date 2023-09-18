@@ -1,4 +1,4 @@
-namespace blazor.tus;
+namespace TusSharp;
 
 public class TusOptionResponse
 {
