@@ -53,7 +53,7 @@ using var upload = client.Upload(opt);
 //start the upload
 await upload.Start(stream);   
 ```
-## Related solutions
+## Dependency
 
 [System.IO.Pipelines](https://www.nuget.org/packages/System.IO.Pipelines/)
 
