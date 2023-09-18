@@ -22,13 +22,13 @@ using blazor.tus;
 
 var client = new TusClient();
 //Create file stream
-const string filePath = "/home/son/test.mp4";
+const string filePath = "/path/to/test.mp4";
 using var stream = File.OpenRead(filePath);
 var fileInfo = new FileInfo(filePath);
 //Create new option
 var opt = new TusUploadOption()
 {
-    EndPoint = new Uri("http://172.17.0.3:1080/files"),
+    EndPoint = new Uri("http://localhost:1080/files"),
     ChunkSize = 1 * 1024 * 1024, //1MB
     RetryDelays = new List<int>{0, 3000, 5000, 10000, 20000},
     MetaData = new Dictionary<string, string>()
