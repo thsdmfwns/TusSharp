@@ -17,7 +17,7 @@ Tus# is a simple and fast **.net** client for the [tus resumable upload protocol
 
 
 ```c#
-using blazor.tus;
+using TusSharp;
 
 var client = new TusClient();
 //Create file stream
@@ -48,10 +48,12 @@ var opt = new TusUploadOption()
         Console.WriteLine($"upload | chunkSize : {chunkSize} | uploadedSize : {uploadedSize} | total : {totalSize} |  {progressPercentage:F2}\n");
     }
 };
-//Create upload with option
-using var upload = client.Upload(opt);
+
+//Create upload with option and FileStream
+using var upload = client.Upload(opt, stream);
+
 //start the upload
-await upload.Start(stream);   
+await upload.Start();   
 ```
 ## Dependency
 
