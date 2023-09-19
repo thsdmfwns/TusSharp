@@ -9,17 +9,20 @@ namespace TusSharp;
 
 public class TusUpload : IDisposable
 {
-    public TusUpload(TusUploadOption uploadOption)
+    public TusUpload(TusUploadOption uploadOption, Stream fileStream)
     {
+        
         UploadOption = uploadOption;
+        FileStream = fileStream;
     }
 
     public readonly TusUploadOption UploadOption;
     public bool IsDisposed { get; private set; }
+    public Stream FileStream { get; }
 
     private HttpClient _httpClient = new();
 
-    public async Task Start(Stream fileStream, CancellationToken cancellationToken = default)
+    public async Task Start(CancellationToken cancellationToken = default)
     {
         var delays = new Queue<int>(UploadOption.RetryDelays ?? new List<int>());
         while (!cancellationToken.IsCancellationRequested)
@@ -28,16 +31,16 @@ public class TusUpload : IDisposable
             {
                 SetHttpDefaultHeader();
                 if (UploadOption.UploadUrl is null)
-                    UploadOption.UploadUrl = await TusCreateAsync(fileStream.Length, cancellationToken);
+                    UploadOption.UploadUrl = await TusCreateAsync(FileStream.Length, cancellationToken);
                 if (!UploadOption.UploadUrl!.IsAbsoluteUri)
                     UploadOption.UploadUrl = new Uri(UploadOption.EndPoint, UploadOption.UploadUrl);
                 var uploadOffset = await TusHeadAsync(cancellationToken);
-                if (uploadOffset != fileStream.Position)
+                if (uploadOffset != FileStream.Position)
                 {
-                    fileStream.Seek(uploadOffset, SeekOrigin.Begin);
+                    FileStream.Seek(uploadOffset, SeekOrigin.Begin);
                 }
-                await TusPatchAsync(UploadOption.UploadUrl!, fileStream.Length, uploadOffset,
-                    PipeReader.Create(fileStream), cancellationToken);
+                await TusPatchAsync(UploadOption.UploadUrl!, FileStream.Length, uploadOffset,
+                    PipeReader.Create(FileStream), cancellationToken);
                 break;
             }
             catch (TusException exception)
@@ -183,7 +186,7 @@ public class TusUpload : IDisposable
         {
             var uploadedSize = uploadOffset;
             var firstRequest = true;
-            while (!cancellationToken.IsCancellationRequested && fileSize != uploadedSize)
+            while (!cancellationToken.IsCancellationRequested && fileSize > uploadedSize)
             {
                 ReadResult result;
                 if (fileSize < uploadedSize + UploadOption.ChunkSize )

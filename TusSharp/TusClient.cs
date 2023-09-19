@@ -5,8 +5,7 @@ namespace TusSharp;
 
 public class TusClient
 {
-    public TusUpload Upload(TusUploadOption uploadOption)
-        => new TusUpload(uploadOption);
+    public TusUpload Upload(TusUploadOption uploadOption, Stream fileStream) => new(uploadOption, fileStream);
 
     /// <summary>
     ///  OPTIONS request MAY be used to gather information about the Server’s current configuration
