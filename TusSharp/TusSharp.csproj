@@ -6,11 +6,11 @@
         <Nullable>enable</Nullable>
         <Version>1.0.0</Version>
         <Authors>SonDev</Authors>
-        <Product>blazor.tus</Product>
-        <PackageProjectUrl>https://github.com/thsdmfwns/blazor.tus</PackageProjectUrl>
+        <Product>TusSharp</Product>
+        <PackageProjectUrl>https://github.com/thsdmfwns/TusSharp</PackageProjectUrl>
         <PackageTags>tus;upload;http;streaming;pipeline;resumable file upload;</PackageTags>
         <Description>
-            Tus, resumable file upload client for .Net Blazor
+            Tus, resumable file upload client for .Net
         </Description>
         <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     </PropertyGroup>
